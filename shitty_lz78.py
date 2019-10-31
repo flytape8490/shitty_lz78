@@ -1,6 +1,8 @@
 #! /usr/bin/env python3
 
-# Shitty LZ78
+# Shitty LZ78: v0.5
+
+
 def compress_78(data):
 	data = data.decode('latin-1')
 	start = b'\x00\x00'
@@ -41,8 +43,16 @@ def compress_78(data):
 		if i >= size:
 			output += stop
 			break
-	print('{0}%'.format(round(len(output)/size * 100, 2)))
-	print('{0} data chunks'.format(chunks))
+	print('\nShitty LZ78\n===========')
+	print('Compression ratio:       {0}% of original size'.format(round(len(output)/size * 100, 2)))
+	if chunks > 1:
+		sizes = [len(i) for i in output.decode('latin-1').split('\xFF\xFF')[:-2]]  # [:-2] cuts off the empty final chunk as well as the partial end-chunk
+		print('Total chunks:            {0}'.format(chunks))
+		print('Average chunk length:    {0} bytes'.format(len(output)//chunks//2))
+		print('Min/Max chunk length:    {0}/{1} bytes'.format(min(sizes)//2, max(sizes)//2))
+	else:
+		print('1 chunk, {0} bytes'.format(size))
+
 	return output
 
 
@@ -84,13 +94,17 @@ if __name__ == '__main__':
 	# clean up args, maybe even use the args library?
 	# redo the open to read files in as chunks, write/append as chunks
 	from sys import argv
-	with open(argv[-2], 'rb') as input:
-		data = input.read()
-	output = open(argv[-1],'wb')
 	if '-d' in argv:
+		with open(argv[-2], 'rb') as input:
+			data = input.read()
+		output = open(argv[-1], 'wb')
 		output.write(decompress_78(data))
+		output.close()
 	elif '-c' in argv:
+		with open(argv[-1], 'rb') as input:
+			data = input.read()
+		output = open(argv[-1]+'.s78', 'wb')
 		output.write(compress_78(data))
+		output.close()
 	else:
-		print('<(-c)ompress | (-d)ecompress> <input path> <output path>')
-	output.close()
+		print('(-c)ompress <path>: outputs a compressed file to <path>.s78\n(-d)ecompress <input path> <output path>: takes input and decompresses it to output')
