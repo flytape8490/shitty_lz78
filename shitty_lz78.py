@@ -16,18 +16,32 @@ shitty_lz78.py -(c|d) <path> <output_path>
 __version__ = 'v1.0'
 __author__ = 'rivard8490 at gmail.com'
 __copyright__ = 'Copyright 2019'
-__todo__ = '* set-up to use the argument module'
+'''TODO:
+* set-up decompress to not freak out if 255 gets encoded at the end of a 
+  block. Would need to make sure the next remnant doesn't start with 255
+  and if it does - trim it and stick it on the end of the working chunk.
+* implement a version flag
+* add a "if file ends with \xFF\xFF: decompress with old formula"
+* set-up a 16bit dictionary?
+* set-up to use the argument module
+'''
 
 from sys import argv
 import chunks
 
 stop = b'\xFF\xFF'
 
-def compress_78(path, output_path=None):
-    if output_path is None: output_path = path + '.s78'
+def byter(value, size = 1):
+    limit = int('ff' * size, 16)
+    assert 0 <= value <= limit, '0 <= value <= {0}'.format(limit) 
+    return value.to_bytes(size, 'big')
 
+
+def compress(path, output_path=None):
     input_file = chunks.read(path, 1, 'rb')
 
+    if output_path is None: 
+        output_path = path + '.s78'
 
     with open(output_path, 'xb') as output_file:
         stack = ['']
@@ -38,38 +52,65 @@ def compress_78(path, output_path=None):
                 symbol += next(input_file)
             except StopIteration:
                 if len(symbol) != 0:
-                    output_file.write(bytes((stack.index(symbol),)))
+                    output_file.write(stack.index(symbol).to_bytes(1, 'big'))
                 break
 
-            # if the symbol is a single character not in the stack
-            if len(symbol) == 1 and symbol not in stack:
-                stack.append(symbol)
-                output_file.write(b'\x00' + symbol)
-                symbol = bytes()
-
-            # if the symbol is line not in the stack
-            elif symbol not in stack:
-                position = stack.index(symbol[:-1])
-                if position < 255:
+            if symbol not in stack:
+                if len(symbol) == 1:
                     stack.append(symbol)
-                    block = bytes((position, symbol[-1]))
-                    output_file.write(block)
+                    output_file.write(b'\x00' + symbol)
                     symbol = bytes()
+
                 else:
-                    if len(symbol) > 2:
-                        position = bytes((stack.index(symbol[:-2]),))
-                        output_file.write(position + stop)
-                    hold = bytes((symbol[-2],))
-                    stack = ['', hold]
-                    output_file.write(b'\x00' + hold)
-                    symbol = bytes((symbol[-1],))
-                    if symbol != hold:
+                    position = stack.index(symbol[:-1])
+                    if position < 255:  # if continue w/ current block
                         stack.append(symbol)
-                        output_file.write(b'\x00' + symbol)
+                        block = bytes((position, symbol[-1]))
+                        output_file.write(block)
                         symbol = bytes()
 
+                    elif len(symbol) > 2:  # if new block, len symbol > 2
+                        lead, stub = symbol[:-2], symbol[-2:]
+                        position = stack.index(lead).to_bytes(1, 'big')
+                        output_file.write(position + stop)
 
-def decompress_78(path, output_path=False):
+                        stub_a = stub[-2].to_bytes(1, 'big')
+                        stub_b = stub[-1].to_bytes(1, 'big')
+
+                        stack = ['', stub_a]
+                        symbol = bytes()
+                        output_file.write(b'\x00' + stub_a)
+                        
+                        if stub_a == stub_b:
+                            output.write(b'\x01' + stub_b)
+                        else:
+                            stack.append(stub_b)
+                            output_file.write(b'\x00' + stub_b)
+
+                    else: # if new block, len symbol <= 2
+                        stub_a = symbol[-2].to_bytes(1, 'big')
+                        stub_b = symbol[-1].to_bytes(1, 'big')
+
+                        if stack.index(stub_a) < 255:
+                            position = stack.index(stub_a).to_bytes(1, 'big')
+                            output_file.write(position + stop)
+                            output_file.write(b'\x00' + stub_b)
+                            stack = ['', stub_b]
+
+                        else:
+                            output_file.write(stop)
+                            stack = ['', stub_a]
+                            symbol = bytes()
+                            output_file.write(b'\x00' + stub_a)
+                            
+                            if stub_a == stub_b:
+                                output.write(b'\x01' + stub_b)
+                            else:
+                                stack.append(stub_b)
+                                output_file.write(b'\x00' + stub_b)
+
+
+def decompress(path, output_path=False):
     if output_path is not False: output_file = open(output_path, 'xb')
 
     input_file = chunks.read(path, 512, 'rb')
@@ -124,8 +165,6 @@ if __name__ == '__main__':
     if '-d' in argv:  # decompress
         pass
     elif '-c' in argv:  # compress
-        compress_78(path, output_path)
+        compress(path, output_path)
     else:
         print(__doc__)
-
-        # if ends in ffff, it's the old version of decompress
